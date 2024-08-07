@@ -142,7 +142,9 @@ NOTES:
  *   Rating: 1
  */
 int bitXor(int x, int y) {
-    return 2;
+    int a = x & ~y;
+    int b = ~x & y;
+    return ~(~a & ~b);
 }
 /*
  * tmin - return minimum two's complement integer
@@ -151,7 +153,7 @@ int bitXor(int x, int y) {
  *   Rating: 1
  */
 int tmin(void) {
-    return 2;
+    return 1 << 31;
 }
 // 2
 /*
@@ -162,7 +164,9 @@ int tmin(void) {
  *   Rating: 1
  */
 int isTmax(int x) {
-    return 2;
+    int y = ~x;
+    int check = !y;
+    return !(y + y + check);
 }
 /*
  * allOddBits - return 1 if all odd-numbered bits in word set to 1
@@ -173,7 +177,10 @@ int isTmax(int x) {
  *   Rating: 2
  */
 int allOddBits(int x) {
-    return 2;
+    int two = 0xaa;
+    int four = (two << 8) | two;
+    int eight = (four << 16) | four;
+    return !((x & eight) ^ eight);
 }
 /*
  * negate - return -x
@@ -183,7 +190,7 @@ int allOddBits(int x) {
  *   Rating: 2
  */
 int negate(int x) {
-    return 2;
+    return ~x + 1;
 }
 // 3
 /*
@@ -195,7 +202,11 @@ int negate(int x) {
  *   Rating: 3
  */
 int isAsciiDigit(int x) {
-    return 2;
+    int base = 0x80;
+    int sign_checker = base << 24;
+    int more_than = !((x + ~0x30 + 1) & sign_checker);
+    int less_than = !((0x39 + ~x + 1) & sign_checker);
+    return more_than & less_than;
 }
 /*
  * conditional - same as x ? y : z
@@ -205,7 +216,8 @@ int isAsciiDigit(int x) {
  *   Rating: 3
  */
 int conditional(int x, int y, int z) {
-    return 2;
+    x = ~(!!x) + 1; // x = 0xffffffff if x else 0
+    return (y & x) + (z & ~x);
 }
 /*
  * isLessOrEqual - if x <= y  then return 1, else return 0
@@ -215,7 +227,10 @@ int conditional(int x, int y, int z) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-    return 2;
+    int different_sign = (x ^ y) >> 31;
+    int ok_if_same_sign = !((y + ~x + 1) >> 31); // same as y - x >= 0
+    int ok_if_diff_sign = !!(x >> 31);               // same as x < 0
+    return (different_sign & ok_if_diff_sign) | ((!different_sign) & ok_if_same_sign);
 }
 // 4
 /*
@@ -227,7 +242,8 @@ int isLessOrEqual(int x, int y) {
  *   Rating: 4
  */
 int logicalNeg(int x) {
-    return 2;
+    int check = x | (~x + 1);
+    return (check >> 31) + 1;
 }
 /* howManyBits - return the minimum number of bits required to represent x in
  *             two's complement
@@ -242,7 +258,21 @@ int logicalNeg(int x) {
  *  Rating: 4
  */
 int howManyBits(int x) {
-    return 0;
+    int b16, b8, b4, b2, b1, b0;
+    int sign = x >> 31;
+    x = (~sign & x) | (sign & ~x);
+    b16 = !!(x >> 16) << 4;
+    x >>= b16;
+    b8 = !!(x >> 8) << 3;
+    x >>= b8;
+    b4 = !!(x >> 4) << 2;
+    x >>= b4;
+    b2 = !!(x >> 2) << 1;
+    x >>= b2;
+    b1 = !!(x >> 1);
+    x >>= b1;
+    b0 = x;
+    return b16 + b8 + b4 + b2 + b1 + b0 + 1; // 1 is the sign bit
 }
 // float
 /*
@@ -257,7 +287,20 @@ int howManyBits(int x) {
  *   Rating: 4
  */
 unsigned floatScale2(unsigned uf) {
-    return 2;
+    unsigned sign = uf >> 31;
+    unsigned exp = (uf >> 23) & 0xff;
+    int res_exp = (exp + 1) << 23;
+    int res = uf & 0x807fffff;
+
+    if (exp == 255) {
+        return uf;
+    }
+    if (exp == 0) {
+        uf <<= 1;
+        uf |= sign << 31;
+        return uf;
+    }
+    return res | res_exp;
 }
 /*
  * floatFloat2Int - Return bit-level equivalent of expression (int) f
@@ -272,7 +315,28 @@ unsigned floatScale2(unsigned uf) {
  *   Rating: 4
  */
 int floatFloat2Int(unsigned uf) {
-    return 2;
+    unsigned sign = uf >> 31;
+    unsigned exp = (uf >> 23) & 0xff;
+    unsigned last_num = uf & 0x7fffff;
+    int real_exp = exp - 127;
+    unsigned real_last_num = last_num | 0x800000;
+    if (exp == 255) {
+        return 0x80000000;
+    }
+    if (exp == 0) {
+        return 0;
+    }
+    if (real_exp >= 0) {
+        if (real_exp >= 31) {
+            return 0x80000000;
+        }
+        real_last_num >>= 23 - real_exp;
+        if (sign) {
+            real_last_num = ~real_last_num + 1;
+        }
+        return real_last_num;
+    }
+    return 0;
 }
 /*
  * floatPower2 - Return bit-level equivalent of the expression 2.0^x
@@ -288,5 +352,15 @@ int floatFloat2Int(unsigned uf) {
  *   Rating: 4
  */
 unsigned floatPower2(int x) {
-    return 2;
+    if (x > 127) {
+        return 0x7f800000;
+    }
+    if (x >= -126) {
+        unsigned exp = x + 127;
+        return exp << 23;
+    }
+    if (x >= -149) {
+        return 1 << (x + 149);
+    }
+    return 0;
 }
